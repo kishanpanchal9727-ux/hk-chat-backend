@@ -53,7 +53,7 @@ const upload = multer({
 });
 
 // Local MongoDB Database se connect karne ka code (localhost ki jagah 127.0.0.1 kiya)
-const MONGO_URI = process.env.MONGO_URI || 'mongodb+srv://kishan:himani123@cluster0.xxxx.mongodb.net/chatDB?retryWrites=true&w=majority';
+const MONGO_URI = process.env.MONGO_URI || 'mongodb+srv://kishan:himani12345@cluster0.xxxx.mongodb.net/chatDB?retryWrites=true&w=majority';
 
 mongoose.connect(MONGO_URI)
     .then(() => console.log('Database se connection ho gaya! 💾💻'))

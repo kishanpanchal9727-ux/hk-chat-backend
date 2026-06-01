@@ -3,10 +3,12 @@ const app = express();
 const http = require('http').createServer(app);
 const io = require('socket.io')(http, {
     cors: {
-        origin: "https://kishanpanchal9727-ux.github.io", // Aapka GitHub Pages url
-        methods: ["GET", "POST"]
-    }
-});     
+        origin: "https://kishanpanchal9727-ux.github.io",
+        methods: ["GET", "POST"],
+        credentials: true
+    },
+    transports: ['websocket', 'polling'] // Isse connection block nahi hoga
+});
 const mongoose = require('mongoose');
 const fs = require('fs');
 const path = require('path');

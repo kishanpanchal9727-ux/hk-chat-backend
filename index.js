@@ -27,7 +27,7 @@ const emitToUser = (username, event, payload) => {
     if (!set) return;
     set.forEach((socketId) => io.to(socketId).emit(event, payload));
 };
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 10000; // Cloud server ke liye default dynamic port
 const uploadsDir = path.join(__dirname, 'uploads');
 
 if (!fs.existsSync(uploadsDir)) {
@@ -52,12 +52,13 @@ const upload = multer({
     }
 });
 
-// Local MongoDB Database se connect karne ka code (localhost ki jagah 127.0.0.1 kiya)
-const MONGO_URI = process.env.MONGO_URI || 'mongodb+srv://kishan:himani12345@cluster0.rpkcxon.mongodb.net/?appName=Cluster0';
+// MongoDB Atlas Connection String
+const MONGO_URI = process.env.MONGO_URI || 'mongodb+srv://kishan:himani12345@cluster0.rpkcxon.mongodb.net/chatDB?retryWrites=true&w=majority';
 
 mongoose.connect(MONGO_URI)
     .then(() => console.log('Database se connection ho gaya! 💾💻'))
     .catch((err) => console.error('Database connect nahi hua:', err));
+
 // Database me message save karne ka format (Schema) design kiya
 const messageSchema = new mongoose.Schema({
     user: String,
@@ -92,6 +93,18 @@ userSchema.pre('save', async function() {
 });
 
 const User = mongoose.model('User', userSchema);
+
+// --- EXPRESS CORS MIDDLEWARE (SABSE ZAROORI BADLAV) ---
+app.use((req, res, next) => {
+    res.setHeader('Access-Control-Allow-Origin', 'https://kishanpanchal9727-ux.github.io');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+    if (req.method === 'OPTIONS') {
+        return res.sendStatus(200);
+    }
+    next();
+});
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
@@ -168,8 +181,9 @@ app.use((err, req, res, next) => {
     next(err);
 });
 
+// Root API route status message dene ke liye
 app.get('/', (req, res) => {
-    res.sendFile(__dirname + '/index.html');
+    res.send('HK Chat Backend Cloud Server is Running Successfully! 🚀');
 });
 
 // PROFILE: get current user profile
@@ -224,7 +238,7 @@ app.get('/search/users', verifyToken, async (req, res) => {
     }
 });
 
-// SIGNUP ROUTE: Naya account banane ke liye (with password hashing)
+// SIGNUP ROUTE
 app.post('/signup', [
     body('username').trim().isLength({ min: 3, max: 20 }).withMessage('Username 3-20 characters hona chahiye'),
     body('password').isLength({ min: 6 }).withMessage('Password kam se kam 6 characters hona chahiye')
@@ -253,7 +267,7 @@ app.post('/signup', [
     }
 });
 
-// LOGIN ROUTE: Account verify karke JWT token dena
+// LOGIN ROUTE
 app.post('/login', [
     body('username').trim().notEmpty().withMessage('Username required'),
     body('password').notEmpty().withMessage('Password required')
@@ -285,14 +299,13 @@ app.post('/login', [
     }
 });
 
-// MESSAGE EDIT ROUTE (requires auth, owner-only)
+// MESSAGE EDIT ROUTE
 app.post('/message/edit', verifyToken, async (req, res) => {
     try {
         const { messageId, newText } = req.body;
         const sanitizedText = sanitize(newText);
         const message = await Message.findById(messageId);
         if (!message) return res.json({ success: false, message: 'Message not found' });
-        // only the sender may edit
         if (normalizeUsername(req.user.username) !== normalizeUsername(message.from)) {
             return res.status(403).json({ success: false, message: 'Not authorized to edit this message' });
         }
@@ -300,10 +313,7 @@ app.post('/message/edit', verifyToken, async (req, res) => {
         message.isEdited = true;
         message.editedAt = new Date();
         await message.save();
-        if (!message) {
-            return res.json({ success: false, message: 'Message not found' });
-        }
-        // notify involved users
+        
         if (message.isPrivate) {
             emitToUser(message.from, 'message edited', message);
             emitToUser(message.to, 'message edited', message);
@@ -316,20 +326,16 @@ app.post('/message/edit', verifyToken, async (req, res) => {
     }
 });
 
-// MESSAGE DELETE ROUTE (requires auth, owner-only)
+// MESSAGE DELETE ROUTE
 app.post('/message/delete', verifyToken, async (req, res) => {
     try {
         const { messageId } = req.body;
         const message = await Message.findById(messageId);
-        if (!message) {
-            return res.json({ success: false, message: 'Message not found' });
-        }
-        // only sender may delete message for everyone
+        if (!message) return res.json({ success: false, message: 'Message not found' });
         if (normalizeUsername(req.user.username) !== normalizeUsername(message.from)) {
             return res.status(403).json({ success: false, message: 'Not authorized to delete this message' });
         }
         await Message.findByIdAndDelete(messageId);
-        // notify involved users
         if (message.isPrivate) {
             emitToUser(message.from, 'message deleted', messageId);
             emitToUser(message.to, 'message deleted', messageId);
@@ -357,7 +363,6 @@ io.on('connection', (socket) => {
             io.emit('update users list', usersWithStatus);
         } catch (err) {
             console.error('Users status update failed:', err);
-            // fallback: broadcast only currently active names
             io.emit('update users list', Object.keys(globalOnlineUsers).map((username) => ({ username, online: true })));
         }
     }
@@ -438,9 +443,7 @@ io.on('connection', (socket) => {
         try {
             const newPrivateChat = new Message(msgData);
             await newPrivateChat.save();
-            console.log('Private message DB me save ho gaya! ✅');
 
-            // attach DB-generated id and timestamp so clients can reference the message
             msgData._id = newPrivateChat._id;
             msgData.timestamp = newPrivateChat.timestamp || newPrivateChat._id;
 
@@ -461,21 +464,17 @@ io.on('connection', (socket) => {
                     io.to(socketId).emit('unread counts', recipientUnread);
                 });
             }
-            // emit delivery acknowledgement to sender
             emitToUser(fromUser, 'message status', { _id: newPrivateChat._id, status: newPrivateChat.status });
         } catch (error) {
             console.error('Private message save error:', error);
         }
     });
 
-    // Delivery & read acknowledgements from clients
     socket.on('message delivered', async (data) => {
         try {
             const { messageId } = data;
             const msg = await Message.findByIdAndUpdate(messageId, { status: 'delivered' }, { new: true });
-            if (msg) {
-                emitToUser(msg.from, 'message delivered', msg);
-            }
+            if (msg) emitToUser(msg.from, 'message delivered', msg);
         } catch (err) {
             console.error('message delivered handling error:', err);
         }
@@ -485,9 +484,7 @@ io.on('connection', (socket) => {
         try {
             const { messageId } = data;
             const msg = await Message.findByIdAndUpdate(messageId, { status: 'read', isRead: true }, { new: true });
-            if (msg) {
-                emitToUser(msg.from, 'message read', msg);
-            }
+            if (msg) emitToUser(msg.from, 'message read', msg);
         } catch (err) {
             console.error('message read handling error:', err);
         }
@@ -507,8 +504,6 @@ io.on('connection', (socket) => {
         try {
             const newChat = new Message(msgData);
             await newChat.save();
-            console.log("Message DB me safely save ho gaya! ✅");
-            // include db id and timestamp so clients can track/edit/delete
             msgData._id = newChat._id;
             msgData.timestamp = newChat.timestamp || newChat._id;
             io.to(currentRoom).emit('chat message', msgData);
@@ -533,17 +528,10 @@ io.on('connection', (socket) => {
     socket.on('logout', async () => {
         if (globalOnlineUsers[currentUsername]) {
             globalOnlineUsers[currentUsername] = Math.max(0, globalOnlineUsers[currentUsername] - 1);
-            if (globalOnlineUsers[currentUsername] === 0) {
-                delete globalOnlineUsers[currentUsername];
-            }
+            if (globalOnlineUsers[currentUsername] === 0) delete globalOnlineUsers[currentUsername];
         }
-
         unregisterSocket();
-
-        if (currentRoom && roomActiveUsers[currentRoom]) {
-            delete roomActiveUsers[currentRoom][socket.id];
-        }
-
+        if (currentRoom && roomActiveUsers[currentRoom]) delete roomActiveUsers[currentRoom][socket.id];
         await broadcastUserStatus();
         socket.to(currentRoom).emit('system notification', `${currentUsername} ne logout kiya.`);
     });
@@ -551,38 +539,16 @@ io.on('connection', (socket) => {
     socket.on('disconnect', async () => {
         if (globalOnlineUsers[currentUsername]) {
             globalOnlineUsers[currentUsername] = Math.max(0, globalOnlineUsers[currentUsername] - 1);
-            if (globalOnlineUsers[currentUsername] === 0) {
-                delete globalOnlineUsers[currentUsername];
-            }
+            if (globalOnlineUsers[currentUsername] === 0) delete globalOnlineUsers[currentUsername];
         }
-
         unregisterSocket();
-
-        if (currentRoom && roomActiveUsers[currentRoom]) {
-            delete roomActiveUsers[currentRoom][socket.id];
-        }
-
+        if (currentRoom && roomActiveUsers[currentRoom]) delete roomActiveUsers[currentRoom][socket.id];
         await broadcastUserStatus();
         socket.to(currentRoom).emit('system notification', `${currentUsername} ne room chhoda 🏃`);
     });
 });
 
-function startServer(port) {
-    http.once('error', (err) => {
-        if (err && err.code === 'EADDRINUSE') {
-            console.warn(`Port ${port} in use, trying ${port + 1}...`);
-            startServer(port + 1);
-        } else {
-            console.error('Server error:', err);
-            process.exit(1);
-        }
-    });
-
-    http.listen(port, () => {
-        console.log(`Server is running on http://localhost:${port}`);
-    });
-}
-
+// Cloud server port configuration listener (Fixed duplicate bindings)
 http.listen(PORT, () => {
-    console.log(`Server is running on port ${PORT}`);
+    console.log(`Server is running smoothly on port ${PORT}`);
 });

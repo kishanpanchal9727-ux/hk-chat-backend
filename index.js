@@ -1,14 +1,17 @@
 const express = require('express');
 const app = express();
 const http = require('http').createServer(app);
+
+// GITHUB PRODUCTION LAYER: Secure Socket Configuration with Cors and Transports
 const io = require('socket.io')(http, {
     cors: {
         origin: "https://kishanpanchal9727-ux.github.io",
         methods: ["GET", "POST"],
         credentials: true
     },
-    transports: ['websocket', 'polling'] // Isse connection block nahi hoga
-});
+    transports: ['websocket', 'polling']
+});     
+
 const mongoose = require('mongoose');
 const fs = require('fs');
 const path = require('path');
@@ -29,7 +32,9 @@ const emitToUser = (username, event, payload) => {
     if (!set) return;
     set.forEach((socketId) => io.to(socketId).emit(event, payload));
 };
-const PORT = process.env.PORT || 10000; // Cloud server ke liye default dynamic port
+
+// GITHUB PRODUCTION LAYER: Dynamic dynamic PORT routing for Render Cloud Engine
+const PORT = process.env.PORT || 10000;
 const uploadsDir = path.join(__dirname, 'uploads');
 
 if (!fs.existsSync(uploadsDir)) {
@@ -54,7 +59,7 @@ const upload = multer({
     }
 });
 
-// MongoDB Atlas Connection String
+// GITHUB PRODUCTION LAYER: Cloud MongoDB Atlas Connection String Secure Routing
 const MONGO_URI = process.env.MONGO_URI || 'mongodb+srv://kishan:himani12345@cluster0.rpkcxon.mongodb.net/chatDB?retryWrites=true&w=majority';
 
 mongoose.connect(MONGO_URI)
@@ -96,7 +101,7 @@ userSchema.pre('save', async function() {
 
 const User = mongoose.model('User', userSchema);
 
-// --- EXPRESS CORS MIDDLEWARE (SABSE ZAROORI BADLAV) ---
+// GITHUB PRODUCTION LAYER: Express Custom API CORS Handlers to prevent 405/CORS blocks
 app.use((req, res, next) => {
     res.setHeader('Access-Control-Allow-Origin', 'https://kishanpanchal9727-ux.github.io');
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
@@ -183,9 +188,9 @@ app.use((err, req, res, next) => {
     next(err);
 });
 
-// Root API route status message dene ke liye
+// GITHUB PRODUCTION LAYER: Live Status Monitor Index Route for Health Checking
 app.get('/', (req, res) => {
-    res.send('HK Chat Backend Cloud Server is Running Successfully! 🚀');
+    res.send('HK Chat Backend Cloud Server is Running smoothly! 🚀');
 });
 
 // PROFILE: get current user profile
@@ -492,65 +497,4 @@ io.on('connection', (socket) => {
         }
     });
 
-    socket.on('chat message', async (data) => {
-        const msgData = {
-            user: data.user,
-            from: data.user,
-            to: null,
-            text: data.text || "",
-            image: data.image || null,
-            room: currentRoom,
-            isPrivate: false
-        };
-
-        try {
-            const newChat = new Message(msgData);
-            await newChat.save();
-            msgData._id = newChat._id;
-            msgData.timestamp = newChat.timestamp || newChat._id;
-            io.to(currentRoom).emit('chat message', msgData);
-        } catch (error) {
-            console.error("Message save karne me error aaya:", error);
-        }
-    });
-
-    socket.on('typing', (data) => {
-        socket.to(currentRoom).emit('display typing', data);
-    });
-
-    function unregisterSocket() {
-        if (usernameSocketIds[currentUsername]) {
-            usernameSocketIds[currentUsername].delete(socket.id);
-            if (usernameSocketIds[currentUsername].size === 0) {
-                delete usernameSocketIds[currentUsername];
-            }
-        }
-    }
-
-    socket.on('logout', async () => {
-        if (globalOnlineUsers[currentUsername]) {
-            globalOnlineUsers[currentUsername] = Math.max(0, globalOnlineUsers[currentUsername] - 1);
-            if (globalOnlineUsers[currentUsername] === 0) delete globalOnlineUsers[currentUsername];
-        }
-        unregisterSocket();
-        if (currentRoom && roomActiveUsers[currentRoom]) delete roomActiveUsers[currentRoom][socket.id];
-        await broadcastUserStatus();
-        socket.to(currentRoom).emit('system notification', `${currentUsername} ne logout kiya.`);
-    });
-
-    socket.on('disconnect', async () => {
-        if (globalOnlineUsers[currentUsername]) {
-            globalOnlineUsers[currentUsername] = Math.max(0, globalOnlineUsers[currentUsername] - 1);
-            if (globalOnlineUsers[currentUsername] === 0) delete globalOnlineUsers[currentUsername];
-        }
-        unregisterSocket();
-        if (currentRoom && roomActiveUsers[currentRoom]) delete roomActiveUsers[currentRoom][socket.id];
-        await broadcastUserStatus();
-        socket.to(currentRoom).emit('system notification', `${currentUsername} ne room chhoda 🏃`);
-    });
-});
-
-// Cloud server port configuration listener (Fixed duplicate bindings)
-http.listen(PORT, () => {
-    console.log(`Server is running smoothly on port ${PORT}`);
-});
+    socket.on
